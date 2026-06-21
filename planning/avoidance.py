@@ -45,6 +45,35 @@ def decide(risks: List[RiskResult], risk_threshold: float, ttc_stop: float) -> C
                    f"avoid TTC={worst.ttc:.2f}s risk={worst.risk:.2f} off={worst.lateral_offset:+.2f}")
 
 
+class CommandSmoother:
+    """Debounce command flapping.
+
+    Detection refreshes ~10 Hz while the render loop runs ~30 Hz, so a single
+    cycle where a track briefly drops can snap an active LEFT/RIGHT/STOP back to
+    CLEAR for a few frames. Hold the last active command for `hold_s` seconds so
+    the avoidance output (and a future motor) sees a steady signal. A stronger
+    command always overrides immediately.
+    """
+
+    _RANK = {"CLEAR": 0, "LEFT": 1, "RIGHT": 1, "STOP": 2}
+
+    def __init__(self, hold_s: float = 0.4):
+        self.hold_s = hold_s
+        self._last = Command("CLEAR", 0.0, 1.0, "init")
+        self._until = 0.0
+
+    def update(self, cmd: Command, now: float) -> Command:
+        if cmd.action != "CLEAR":
+            # equal-or-stronger command refreshes the hold window
+            self._last = cmd
+            self._until = now + (self.hold_s * 2 if cmd.action == "STOP" else self.hold_s)
+            return cmd
+        if now < self._until:          # CLEAR but still inside the hold window
+            return self._last
+        self._last = cmd
+        return cmd
+
+
 def to_motor(cmd: Command) -> Tuple[float, float]:
     """Placeholder mapping command -> (left_wheel, right_wheel) in [-1, 1].
 

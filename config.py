@@ -49,6 +49,7 @@ class Config:
     ttc_warn_s: float = 2.0           # time-to-collision below this starts raising risk
     ttc_stop_s: float = 0.8           # below this = hard STOP
     risk_threshold: float = 0.5       # risk above which an avoidance command fires
+    command_hold_s: float = 0.4       # debounce: hold an active command this long
 
     # --- scene reasoning (OpenAI) ---
     llm_enabled: bool = True          # auto-disabled if OPENAI_API_KEY unset
