@@ -18,7 +18,6 @@ import time
 import cv2
 
 import config as cfg_mod
-from perception.detector import ObjectDetector
 from perception.tracker import Tracker
 from perception.depth import MonoLoomingDepth
 from physics import rk4
@@ -42,7 +41,8 @@ def parse_args(cfg):
     p.add_argument("--source", choices=["webcam", "picamera"], default=cfg.source)
     p.add_argument("--headless", action="store_true", help="serve MJPEG instead of a window")
     p.add_argument("--no-llm", action="store_true", help="disable OpenAI scene reasoning")
-    p.add_argument("--model", default=cfg.model_path)
+    p.add_argument("--backend", choices=["litert", "mediapipe"], default=cfg.detector_backend)
+    p.add_argument("--model", default=None, help="override detector model path")
     p.add_argument("--detect-every", type=int, default=cfg.detect_every)
     p.add_argument("--width", type=int, default=cfg.width)
     p.add_argument("--height", type=int, default=cfg.height)
@@ -50,7 +50,10 @@ def parse_args(cfg):
     a = p.parse_args()
     cfg.source = a.source
     cfg.headless = a.headless
-    cfg.model_path = a.model
+    cfg.detector_backend = a.backend
+    if a.model:
+        cfg.model_path = a.model
+        cfg.mediapipe_model_path = a.model
     cfg.detect_every = a.detect_every
     cfg.width, cfg.height, cfg.flip = a.width, a.height, a.flip
     if a.no_llm:
@@ -61,12 +64,20 @@ def parse_args(cfg):
 def main() -> int:
     cfg = parse_args(cfg_mod.load())
 
-    if not os.path.exists(cfg.model_path):
-        print(f"ERROR: detector model not found at {cfg.model_path}\n"
-              "Download it with:\n"
-              "  curl -L -o models/efficientdet_lite0.tflite \\\n"
+    if cfg.detector_backend == "mediapipe":
+        model_path = cfg.mediapipe_model_path
+        dl = ("  curl -L -o models/efficientdet_lite0.tflite \\\n"
               "    https://storage.googleapis.com/mediapipe-models/object_detector/"
-              "efficientdet_lite0/float32/latest/efficientdet_lite0.tflite",
+              "efficientdet_lite0/float32/latest/efficientdet_lite0.tflite")
+    else:
+        model_path = cfg.model_path
+        dl = ("  curl -L -o models/efficientdet_lite0_pp.tflite \\\n"
+              "    https://storage.googleapis.com/download.tensorflow.org/models/tflite/"
+              "task_library/object_detection/android/"
+              "lite-model_efficientdet_lite0_detection_metadata_1.tflite")
+
+    if not os.path.exists(model_path):
+        print(f"ERROR: detector model not found at {model_path}\nDownload it with:\n{dl}",
               file=sys.stderr)
         return 1
 
@@ -75,8 +86,15 @@ def main() -> int:
               "(reactive loop unaffected).")
         cfg.llm_enabled = False
 
-    detector = ObjectDetector(cfg.model_path, cfg.score_threshold, cfg.max_results,
-                              cfg.detect_size, cfg.allowed_labels)
+    if cfg.detector_backend == "mediapipe":
+        from perception.detector import ObjectDetector
+        detector = ObjectDetector(model_path, cfg.score_threshold, cfg.max_results,
+                                  cfg.detect_size, cfg.allowed_labels)
+    else:
+        from perception.litert_detector import LiteRTDetector
+        detector = LiteRTDetector(model_path, cfg.score_threshold, cfg.max_results,
+                                  cfg.allowed_labels, cfg.num_threads)
+    print(f"detector backend: {cfg.detector_backend} ({model_path})")
     tracker = Tracker(cfg.iou_match_threshold, cfg.max_age, cfg.min_hits)
     depth = MonoLoomingDepth()
     model_f = get_model(cfg.motion_model, cfg.drag_coeff)

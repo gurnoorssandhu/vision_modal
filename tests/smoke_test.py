@@ -14,7 +14,8 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config as cfg_mod
-from perception.detector import ObjectDetector, Detection
+from perception.types import Detection
+from perception.litert_detector import LiteRTDetector
 from perception.tracker import Tracker
 from physics import rk4, collision
 from physics.motion_models import get_model
@@ -30,8 +31,8 @@ def main() -> int:
 
     # 1) detector loads and runs on a synthetic frame without error
     if os.path.exists(cfg.model_path):
-        det = ObjectDetector(cfg.model_path, cfg.score_threshold, cfg.max_results,
-                             cfg.detect_size, cfg.allowed_labels)
+        det = LiteRTDetector(cfg.model_path, cfg.score_threshold, cfg.max_results,
+                             cfg.allowed_labels, cfg.num_threads)
         frame = (np.random.rand(H, W, 3) * 255).astype(np.uint8)
         out = det.detect(frame)
         print(f"detector OK ({len(out)} detections on noise frame)")

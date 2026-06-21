@@ -14,7 +14,7 @@ import numpy as np
 
 from physics.kalman import KalmanCV
 from physics.state import bbox_to_measurement, state_to_bbox, X, Y
-from .detector import Detection
+from .types import Detection
 
 
 def iou(a, b) -> float:

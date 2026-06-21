@@ -1,6 +1,9 @@
 opencv-python>=4.9
-mediapipe>=0.10.18
+ai-edge-litert>=1.0        # default detector backend (works on Python 3.13 / Pi aarch64)
 numpy>=1.26
 openai>=1.40
 pillow>=10
-# Pi only (do not install on laptop): picamera2  -> sudo apt install python3-picamera2
+# Optional mediapipe backend (--backend mediapipe). No Python 3.13 wheel, so it is
+# NOT used on the Pi. Install only on a 3.11/3.12 env if you want it:
+#   mediapipe>=0.10.18
+# Pi camera (do not pip install; apt only): sudo apt install python3-picamera2

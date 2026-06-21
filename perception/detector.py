@@ -6,7 +6,6 @@ MediaPipe types.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import List, Optional
 
 import cv2
@@ -15,12 +14,7 @@ import numpy as np
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
-
-@dataclass
-class Detection:
-    bbox: tuple          # (x1, y1, x2, y2) in full-frame pixels
-    label: str
-    score: float
+from .types import Detection
 
 
 class ObjectDetector:

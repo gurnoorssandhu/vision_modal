@@ -20,10 +20,13 @@ class Config:
     flip: bool = False
 
     # --- detector ---
-    model_path: str = "models/efficientdet_lite0.tflite"
+    detector_backend: str = "litert"  # "litert" (default, mediapipe-free) | "mediapipe"
+    model_path: str = "models/efficientdet_lite0_pp.tflite"   # LiteRT (postprocess-baked)
+    mediapipe_model_path: str = "models/efficientdet_lite0.tflite"  # mediapipe backend only
     score_threshold: float = 0.4
     max_results: int = 10
-    detect_size: int = 320            # downscale long edge fed to the detector
+    num_threads: int = 4              # LiteRT CPU threads (Pi 4 has 4 cores)
+    detect_size: int = 320            # mediapipe backend only (LiteRT uses model input size)
     detect_every: int = 1            # run detector every N frames (>1 = interpolate)
     # category allow-list (None = keep all COCO classes the model emits)
     allowed_labels: Optional[list] = None

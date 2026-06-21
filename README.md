@@ -10,7 +10,7 @@ A decoupled, multi-threaded pipeline:
 
 ```
 camera (threaded, newest-frame)
-   -> MediaPipe object detection (EfficientDet-Lite, tflite/XNNPACK)
+   -> LiteRT object detection (EfficientDet-Lite tflite, XNNPACK; mediapipe-free)
    -> multi-object tracking (IoU + persistent IDs)
    -> Kalman filter (smooth state: position + velocity in [x, y, looming])
    -> RK4 trajectory prediction (integrate the motion ODE forward)
@@ -39,9 +39,9 @@ Design notes:
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# detector model (~4.5 MB)
-curl -L -o models/efficientdet_lite0.tflite \
-  https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/latest/efficientdet_lite0.tflite
+# detector model (~4.5 MB, post-processing baked in)
+curl -L -o models/efficientdet_lite0_pp.tflite \
+  https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/object_detection/android/lite-model_efficientdet_lite0_detection_metadata_1.tflite
 
 export OPENAI_API_KEY=sk-...   # optional; enables scene reasoning
 python app.py
@@ -54,23 +54,35 @@ to skip the scene-reasoning thread.
 
 ## Raspberry Pi 4
 
+The default LiteRT detector is **mediapipe-free**, so it runs on the Pi's stock
+Python 3.13 (mediapipe has no 3.13 wheel). Requires 64-bit Pi OS (`uname -m` =
+`aarch64`).
+
 ```bash
-sudo apt install -y python3-picamera2
-# (use a venv with --system-site-packages so picamera2 is importable, or install
-#  opencv/mediapipe/openai into the system python)
+sudo apt install -y python3-picamera2 git
+git clone https://github.com/gurnoorssandhu/vision_modal.git && cd vision_modal
+
+# venv that can SEE the apt-installed picamera2
+python3 -m venv --system-site-packages .venv && source .venv/bin/activate
+pip install ai-edge-litert opencv-python openai numpy pillow
+
+curl -L -o models/efficientdet_lite0_pp.tflite \
+  https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/object_detection/android/lite-model_efficientdet_lite0_detection_metadata_1.tflite
+
+export OPENAI_API_KEY=sk-...        # optional
 python app.py --source picamera --headless
 # view annotated stream at http://<pi-ip>:8000   (e.g. http://100.125.23.18:8000)
 ```
 
 Tune for the Pi in `config.py`: lower `width/height`, raise `detect_every`
-(detect every Nth frame, Kalman coasts between).
+(detect every Nth frame, Kalman coasts between), adjust `num_threads`.
 
 ## Layout
 
 | path | role |
 |---|---|
 | `camera/` | `CameraSource` backends (webcam, picamera; stereo later) |
-| `perception/` | detector, tracker, depth channel |
+| `perception/` | litert_detector (default) + mediapipe detector, tracker, depth channel |
 | `physics/` | state, Kalman, motion models, RK4, collision |
 | `planning/` | risk -> avoidance command (+ motor seam) |
 | `reasoning/` | async OpenAI scene reasoning |
