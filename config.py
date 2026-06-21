@@ -45,9 +45,9 @@ class Config:
     ttc_stop_s: float = 0.8           # below this = hard STOP
     risk_threshold: float = 0.5       # risk above which an avoidance command fires
 
-    # --- scene reasoning (Claude) ---
-    llm_enabled: bool = True          # auto-disabled if ANTHROPIC_API_KEY unset
-    llm_model: str = "claude-haiku-4-5"   # fast/cheap scene labels
+    # --- scene reasoning (OpenAI) ---
+    llm_enabled: bool = True          # auto-disabled if OPENAI_API_KEY unset
+    llm_model: str = "gpt-4o-mini"    # fast/cheap vision scene labels
     llm_interval_s: float = 1.5       # min seconds between API calls
     llm_jpeg_quality: int = 60
     llm_max_tokens: int = 512

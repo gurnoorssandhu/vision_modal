@@ -1,12 +1,12 @@
-"""Async scene reasoning via the Claude API (Anthropic SDK, vision).
+"""Async scene reasoning via the OpenAI API (vision).
 
 Runs on its OWN background thread, off the reactive hot path. Every
-`interval_s` it grabs the newest frame, JPEG-encodes it, and asks Claude for a
+`interval_s` it grabs the newest frame, JPEG-encodes it, and asks the model for a
 structured scene assessment. The reactive loop never waits on this — it reads the
 last cached result, which simply goes stale if the network/API is unavailable.
 
-Model defaults to claude-haiku-4-5 (fast, cheap). Structured output via
-output_config.format guarantees a parseable result.
+Model defaults to gpt-4o-mini (fast, cheap, vision). Structured output via
+response_format json_schema (strict) guarantees a parseable result.
 """
 from __future__ import annotations
 
@@ -75,8 +75,8 @@ class SceneReasoner:
         self.available = False
 
         try:
-            import anthropic  # lazy: pipeline still runs if SDK/key missing
-            self._client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY
+            from openai import OpenAI  # lazy: pipeline still runs if SDK/key missing
+            self._client = OpenAI()    # reads OPENAI_API_KEY
             self.available = True
         except Exception as e:  # noqa: BLE001
             self._result = SceneResult(scene=f"(scene model disabled: {e})")
@@ -119,21 +119,27 @@ class SceneReasoner:
             if not ok:
                 return
             b64 = base64.standard_b64encode(buf.tobytes()).decode("utf-8")
-            resp = self._client.messages.create(
+            resp = self._client.chat.completions.create(
                 model=self.model,
                 max_tokens=self.max_tokens,
-                system=_SYSTEM,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {
-                            "type": "base64", "media_type": "image/jpeg", "data": b64}},
+                messages=[
+                    {"role": "system", "content": _SYSTEM},
+                    {"role": "user", "content": [
                         {"type": "text", "text": _PROMPT},
-                    ],
-                }],
-                output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}", "detail": "low"}},
+                    ]},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "scene_assessment",
+                        "strict": True,
+                        "schema": _SCHEMA,
+                    },
+                },
             )
-            text = next((b.text for b in resp.content if b.type == "text"), "")
+            text = resp.choices[0].message.content or "{}"
             data = json.loads(text)
             result = SceneResult(
                 scene=data.get("scene", ""),

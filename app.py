@@ -3,7 +3,7 @@
 Wires the decoupled pipeline:
   camera (threaded)  ->  detect -> track -> Kalman -> RK4 predict
                          -> collision risk -> avoidance command -> overlay
-  + an async Claude scene-reasoning thread that never blocks the hot loop.
+  + an async OpenAI scene-reasoning thread that never blocks the hot loop.
 
 Run on a laptop webcam:   python app.py
 Run headless on the Pi:   python app.py --source picamera --headless
@@ -41,7 +41,7 @@ def parse_args(cfg):
     p = argparse.ArgumentParser(description="vision_modal pipeline")
     p.add_argument("--source", choices=["webcam", "picamera"], default=cfg.source)
     p.add_argument("--headless", action="store_true", help="serve MJPEG instead of a window")
-    p.add_argument("--no-llm", action="store_true", help="disable Claude scene reasoning")
+    p.add_argument("--no-llm", action="store_true", help="disable OpenAI scene reasoning")
     p.add_argument("--model", default=cfg.model_path)
     p.add_argument("--detect-every", type=int, default=cfg.detect_every)
     p.add_argument("--width", type=int, default=cfg.width)
@@ -70,8 +70,8 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    if cfg.llm_enabled and not os.environ.get("ANTHROPIC_API_KEY"):
-        print("note: ANTHROPIC_API_KEY not set -> scene reasoning disabled "
+    if cfg.llm_enabled and not os.environ.get("OPENAI_API_KEY"):
+        print("note: OPENAI_API_KEY not set -> scene reasoning disabled "
               "(reactive loop unaffected).")
         cfg.llm_enabled = False
 

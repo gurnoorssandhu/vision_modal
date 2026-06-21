@@ -1,6 +1,6 @@
 opencv-python>=4.9
 mediapipe>=0.10.18
 numpy>=1.26
-anthropic>=0.50
+openai>=1.40
 pillow>=10
 # Pi only (do not install on laptop): picamera2  -> sudo apt install python3-picamera2

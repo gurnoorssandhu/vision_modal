@@ -19,8 +19,8 @@ camera (threaded, newest-frame)
    -> overlay / annotated stream
 ```
 
-Plus an **async Claude scene-reasoning thread** (Anthropic API, vision) that adds
-high-level hazard understanding ~1 Hz **without ever blocking the reactive loop**.
+Plus an **async OpenAI scene-reasoning thread** (vision) that adds high-level
+hazard understanding ~1 Hz **without ever blocking the reactive loop**.
 
 Design notes:
 - **Physics-informed:** each object is a Newtonian state; a Kalman filter estimates
@@ -30,8 +30,8 @@ Design notes:
 - **Monocular for now:** depth is a relative looming cue, not metric. The
   `perception/depth.py` `DepthChannel` interface is the seam for a stereo / depth
   camera (OAK-D, RealSense) later — physics/planning won't change.
-- **LLM stays off the hot path:** the reactive loop runs at full FPS even with no
-  network; the scene line just goes stale.
+- **Scene model stays off the hot path:** the reactive loop runs at full FPS even
+  with no network; the scene line just goes stale.
 
 ## Setup (laptop)
 
@@ -43,21 +43,21 @@ pip install -r requirements.txt
 curl -L -o models/efficientdet_lite0.tflite \
   https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/latest/efficientdet_lite0.tflite
 
-export ANTHROPIC_API_KEY=sk-ant-...   # optional; enables scene reasoning
+export OPENAI_API_KEY=sk-...   # optional; enables scene reasoning
 python app.py
 ```
 
 Walk toward the webcam: boxes track you, magenta ghost boxes project where RK4
 predicts you'll be, the corridor turns red as TTC drops, and the HUD prints a
 `STOP` / `LEFT` / `RIGHT` command. Press `q` to quit. Run `python app.py --no-llm`
-to skip the Claude thread.
+to skip the scene-reasoning thread.
 
 ## Raspberry Pi 4
 
 ```bash
 sudo apt install -y python3-picamera2
 # (use a venv with --system-site-packages so picamera2 is importable, or install
-#  opencv/mediapipe/anthropic into the system python)
+#  opencv/mediapipe/openai into the system python)
 python app.py --source picamera --headless
 # view annotated stream at http://<pi-ip>:8000   (e.g. http://100.125.23.18:8000)
 ```
@@ -73,7 +73,7 @@ Tune for the Pi in `config.py`: lower `width/height`, raise `detect_every`
 | `perception/` | detector, tracker, depth channel |
 | `physics/` | state, Kalman, motion models, RK4, collision |
 | `planning/` | risk -> avoidance command (+ motor seam) |
-| `reasoning/` | async Claude scene reasoning |
+| `reasoning/` | async OpenAI scene reasoning |
 | `viz/` | overlay drawing + MJPEG server |
 | `app.py` | wires the threads together |
 | `stream.py` | standalone raw MJPEG camera server (Pi sanity check) |
