@@ -58,6 +58,13 @@ class Config:
     llm_jpeg_quality: int = 60
     llm_max_tokens: int = 512
 
+    # --- haptic servo (Pi GPIO; opt-in) ---
+    servo_enabled: bool = False       # set by --servo
+    servo_pin: int = 18               # BCM pin driving the servo signal wire
+    servo_tap_deg: float = 15.0       # tap amplitude at max risk
+    servo_min_rate: float = 2.0       # taps/sec at threshold risk
+    servo_max_rate: float = 7.0       # taps/sec at max risk
+
     # --- runtime / output ---
     headless: bool = False            # True on Pi: serve annotated MJPEG instead of a window
     stream_port: int = 8000

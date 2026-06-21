@@ -45,6 +45,8 @@ def parse_args(cfg):
     p.add_argument("--backend", choices=["litert", "mediapipe"], default=cfg.detector_backend)
     p.add_argument("--model", default=None, help="override detector model path")
     p.add_argument("--threads", type=int, default=cfg.num_threads, help="LiteRT detector threads")
+    p.add_argument("--servo", action="store_true", help="enable haptic servo (Pi GPIO)")
+    p.add_argument("--servo-pin", type=int, default=cfg.servo_pin, help="BCM pin for servo signal")
     p.add_argument("--profile", action="store_true", help="print per-stage timing")
     p.add_argument("--width", type=int, default=cfg.width)
     p.add_argument("--height", type=int, default=cfg.height)
@@ -58,6 +60,8 @@ def parse_args(cfg):
         cfg.mediapipe_model_path = a.model
     cfg.profile = a.profile
     cfg.num_threads = a.threads
+    cfg.servo_enabled = a.servo
+    cfg.servo_pin = a.servo_pin
     cfg.width, cfg.height, cfg.flip = a.width, a.height, a.flip
     if a.no_llm:
         cfg.llm_enabled = False
@@ -104,6 +108,13 @@ def main() -> int:
     depth = MonoLoomingDepth()
     model_f = get_model(cfg.motion_model, cfg.drag_coeff)
     smoother = avoidance.CommandSmoother(cfg.command_hold_s)
+
+    haptic = None
+    if cfg.servo_enabled:
+        from planning.haptic import HapticServo
+        haptic = HapticServo(cfg.servo_pin, cfg.risk_threshold, cfg.servo_tap_deg,
+                             cfg.servo_min_rate, cfg.servo_max_rate)
+        haptic.start()
 
     # Always construct (it degrades to a no-op if the SDK/key is missing); only
     # spin up the background thread when LLM reasoning is enabled.
@@ -168,6 +179,10 @@ def main() -> int:
                 print(f"[{time.strftime('%H:%M:%S')}] {command.action:5s} | {command.reason}")
                 last_action = command.action
 
+            if haptic is not None:
+                worst = max((r.risk for r in risks), default=0.0)
+                haptic.set_command(command, worst)
+
             scene.set_frame(frame)   # hand newest raw frame to the async scene model
             t_c = time.time()
 
@@ -200,6 +215,8 @@ def main() -> int:
         pass
     finally:
         scene.stop()
+        if haptic is not None:
+            haptic.stop()
         if streamer is not None:
             streamer.stop()
         async_det.stop()       # also closes the detector
