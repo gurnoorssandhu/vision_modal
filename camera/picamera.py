@@ -43,8 +43,18 @@ class PiCameraSource(CameraSource):
         self._thread.start()
 
     def _loop(self) -> None:
+        fails = 0
         while self._running:
-            rgb = self.picam2.capture_array()        # RGB
+            try:
+                rgb = self.picam2.capture_array()    # RGB (blocks ~1/fps)
+            except Exception as e:  # noqa: BLE001 - sensor/ribbon blip: don't kill thread
+                fails += 1
+                if fails in (1, 30):
+                    print(f"camera capture error ({fails}x): {e} "
+                          "-- check CSI ribbon / power", flush=True)
+                time.sleep(0.1)
+                continue
+            fails = 0
             frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             if self.flip:
                 frame = cv2.flip(frame, 1)
