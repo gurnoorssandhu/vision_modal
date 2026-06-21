@@ -25,9 +25,11 @@ class Config:
     mediapipe_model_path: str = "models/efficientdet_lite0.tflite"  # mediapipe backend only
     score_threshold: float = 0.4
     max_results: int = 10
-    num_threads: int = 4              # LiteRT CPU threads (Pi 4 has 4 cores)
+    num_threads: int = 3              # LiteRT detector CPU threads (Pi 4 has 4 cores;
+                                      # leave one for capture/render/stream)
     detect_size: int = 320            # mediapipe backend only (LiteRT uses model input size)
-    detect_every: int = 1            # run detector every N frames (>1 = interpolate)
+    # detect_every is obsolete: detection now runs on its own thread (async_detector)
+    # and the render loop coasts on the Kalman prediction between fresh detections.
     # category allow-list (None = keep all COCO classes the model emits)
     allowed_labels: Optional[list] = None
 
@@ -58,7 +60,9 @@ class Config:
     # --- runtime / output ---
     headless: bool = False            # True on Pi: serve annotated MJPEG instead of a window
     stream_port: int = 8000
+    stream_jpeg_quality: int = 70     # lower = faster encode/less bandwidth on the Pi
     show_fps: bool = True
+    profile: bool = False             # print per-stage timing every ~2s
 
 
 def load() -> Config:

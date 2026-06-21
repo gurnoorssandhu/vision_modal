@@ -18,6 +18,7 @@ import time
 import cv2
 
 import config as cfg_mod
+from perception.async_detector import AsyncDetector
 from perception.tracker import Tracker
 from perception.depth import MonoLoomingDepth
 from physics import rk4
@@ -43,7 +44,7 @@ def parse_args(cfg):
     p.add_argument("--no-llm", action="store_true", help="disable OpenAI scene reasoning")
     p.add_argument("--backend", choices=["litert", "mediapipe"], default=cfg.detector_backend)
     p.add_argument("--model", default=None, help="override detector model path")
-    p.add_argument("--detect-every", type=int, default=cfg.detect_every)
+    p.add_argument("--profile", action="store_true", help="print per-stage timing")
     p.add_argument("--width", type=int, default=cfg.width)
     p.add_argument("--height", type=int, default=cfg.height)
     p.add_argument("--flip", action="store_true", default=cfg.flip)
@@ -54,7 +55,7 @@ def parse_args(cfg):
     if a.model:
         cfg.model_path = a.model
         cfg.mediapipe_model_path = a.model
-    cfg.detect_every = a.detect_every
+    cfg.profile = a.profile
     cfg.width, cfg.height, cfg.flip = a.width, a.height, a.flip
     if a.no_llm:
         cfg.llm_enabled = False
@@ -95,6 +96,8 @@ def main() -> int:
         detector = LiteRTDetector(model_path, cfg.score_threshold, cfg.max_results,
                                   cfg.allowed_labels, cfg.num_threads)
     print(f"detector backend: {cfg.detector_backend} ({model_path})")
+    async_det = AsyncDetector(detector)   # detection on its own thread
+    async_det.start()
     tracker = Tracker(cfg.iou_match_threshold, cfg.max_age, cfg.min_hits)
     depth = MonoLoomingDepth()
     model_f = get_model(cfg.motion_model, cfg.drag_coeff)
@@ -109,20 +112,23 @@ def main() -> int:
     streamer = None
     if cfg.headless:
         from viz.mjpeg import AnnotatedMJPEGServer
-        streamer = AnnotatedMJPEGServer(cfg.stream_port)
+        streamer = AnnotatedMJPEGServer(cfg.stream_port, cfg.stream_jpeg_quality)
         streamer.start()
         print(f"serving annotated stream on http://<host>:{cfg.stream_port}")
 
     cam = build_camera(cfg)
 
     prev_ts = 0.0
-    frame_idx = 0
     fps = 0.0
     last_action = None
+    last_seq = -1
+    # rolling per-stage timers (seconds) for --profile
+    prof = {"read": 0.0, "phys": 0.0, "render": 0.0, "n": 0, "t0": time.time()}
     print("running. press 'q' in the window to quit (or Ctrl-C if headless).")
 
     try:
         while True:
+            t_a = time.time()
             frame, ts = cam.read()
             if frame is None:
                 time.sleep(0.005)
@@ -133,16 +139,17 @@ def main() -> int:
             dt = (ts - prev_ts) if prev_ts else 1.0 / 30.0
             prev_ts = ts
             h, w = frame.shape[:2]
-            frame_idx += 1
 
-            # --- perception ---
-            if frame_idx % max(cfg.detect_every, 1) == 0:
-                detections = detector.detect(frame)
-            else:
-                detections = []   # tracker coasts on the Kalman prediction
-            tracks = tracker.update(detections, dt)
+            # --- perception: detection runs on its own thread; we consume the
+            #     latest results and coast on the Kalman prediction in between ---
+            async_det.set_frame(frame)
+            dets, seq = async_det.get()
+            fresh = seq != last_seq
+            last_seq = seq
+            t_b = time.time()
 
-            # --- physics + risk + planning ---
+            # --- physics + risk + planning (every frame) ---
+            tracks = tracker.update(dets if fresh else [], dt)
             items, risks = [], []
             for t in tracks:
                 traj = rk4.rollout(t.state, cfg.predict_horizon_s, cfg.predict_steps, model_f)
@@ -157,13 +164,12 @@ def main() -> int:
                 print(f"[{time.strftime('%H:%M:%S')}] {command.action:5s} | {command.reason}")
                 last_action = command.action
 
-            # hand the newest raw frame to the async scene model
-            scene.set_frame(frame)
+            scene.set_frame(frame)   # hand newest raw frame to the async scene model
+            t_c = time.time()
 
             # --- render ---
-            overlay.annotate(frame, items, command, scene.get(), fps, cfg.corridor_frac)
-
-            # fps (EMA)
+            overlay.annotate(frame, items, command, scene.get(), fps,
+                             cfg.corridor_frac, async_det.fps)
             inst = 1.0 / dt if dt > 0 else 0.0
             fps = inst if fps == 0 else 0.9 * fps + 0.1 * inst
 
@@ -173,13 +179,26 @@ def main() -> int:
                 cv2.imshow("vision_modal", frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
+            t_d = time.time()
+
+            if cfg.profile:
+                prof["read"] += t_b - t_a
+                prof["phys"] += t_c - t_b
+                prof["render"] += t_d - t_c
+                prof["n"] += 1
+                if t_d - prof["t0"] >= 2.0:
+                    n = max(prof["n"], 1)
+                    print(f"[profile] render {fps:4.1f}fps | det {async_det.fps:4.1f}fps "
+                          f"({async_det.infer_ms:5.1f}ms) | read {prof['read']/n*1e3:4.1f} "
+                          f"phys {prof['phys']/n*1e3:4.1f} render {prof['render']/n*1e3:4.1f} ms")
+                    prof.update(read=0.0, phys=0.0, render=0.0, n=0, t0=t_d)
     except KeyboardInterrupt:
         pass
     finally:
         scene.stop()
         if streamer is not None:
             streamer.stop()
-        detector.close()
+        async_det.stop()       # also closes the detector
         cam.release()
         cv2.destroyAllWindows()
     return 0

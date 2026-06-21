@@ -62,7 +62,7 @@ def draw_item(frame, track, risk, traj):
         cv2.rectangle(frame, (gx1, gy1), (gx2, gy2), (255, 0, 255), 1)
 
 
-def draw_hud(frame, command, scene, fps: float):
+def draw_hud(frame, command, scene, fps: float, det_fps: float = 0.0):
     h, w = frame.shape[:2]
     bar = frame.copy()
     cv2.rectangle(bar, (0, 0), (w, 78), (0, 0, 0), -1)
@@ -83,13 +83,17 @@ def draw_hud(frame, command, scene, fps: float):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, sc, 1)
 
     if fps:
-        cv2.putText(frame, f"{fps:4.1f} FPS", (w - 90, 22),
+        cv2.putText(frame, f"{fps:4.1f} FPS", (w - 96, 22),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    if det_fps:
+        cv2.putText(frame, f"det {det_fps:4.1f}", (w - 96, 42),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
 
 
-def annotate(frame, items: List[dict], command, scene, fps: float, corridor_frac: float):
+def annotate(frame, items: List[dict], command, scene, fps: float, corridor_frac: float,
+             det_fps: float = 0.0):
     draw_corridor(frame, corridor_frac)
     for it in items:
         draw_item(frame, it["track"], it["risk"], it["traj"])
-    draw_hud(frame, command, scene, fps)
+    draw_hud(frame, command, scene, fps, det_fps)
     return frame

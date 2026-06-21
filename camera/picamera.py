@@ -1,10 +1,12 @@
-"""Raspberry Pi camera source (Picamera2 / OV5647).
+"""Raspberry Pi camera source (Picamera2 / OV5647), threaded.
 
-Imported lazily so the module is harmless on a laptop that has no picamera2.
-Same interface as WebcamSource — the rest of the pipeline can't tell them apart.
+A background thread continuously pulls frames so the hot loop never blocks on
+`capture_array`, and always gets the freshest frame. Imported lazily so the module
+is harmless on a laptop that has no picamera2. Same interface as WebcamSource.
 """
 from __future__ import annotations
 
+import threading
 import time
 from typing import Optional, Tuple
 
@@ -33,12 +35,30 @@ class PiCameraSource(CameraSource):
         self.picam2.start()
         time.sleep(0.5)  # let AE/AWB settle
 
+        self._lock = threading.Lock()
+        self._frame: Optional[np.ndarray] = None
+        self._ts: float = 0.0
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        while self._running:
+            rgb = self.picam2.capture_array()        # RGB
+            frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            if self.flip:
+                frame = cv2.flip(frame, 1)
+            with self._lock:
+                self._frame = frame
+                self._ts = time.time()
+
     def read(self) -> Tuple[Optional[np.ndarray], float]:
-        rgb = self.picam2.capture_array()       # RGB
-        frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        if self.flip:
-            frame = cv2.flip(frame, 1)
-        return frame, time.time()
+        with self._lock:
+            if self._frame is None:
+                return None, 0.0
+            return self._frame.copy(), self._ts
 
     def release(self) -> None:
+        self._running = False
+        self._thread.join(timeout=1.0)
         self.picam2.stop()
